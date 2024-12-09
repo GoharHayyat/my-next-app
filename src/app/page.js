@@ -137,8 +137,8 @@ export default function Page() {
 
     if (validateForm()) {
       setIsLoading(true);
-      setApiError("");  // Reset API error message on each submit
-      setSuccessMessage("");  // Reset success message
+      setApiError("");  
+      setSuccessMessage(""); 
 
       try {
         const imageUrls = await uploadImages();
@@ -160,10 +160,10 @@ export default function Page() {
           throw new Error(errorData.message || "Failed to submit the form");
         }
 
-        // Success message
+        
         setSuccessMessage("Vehicle information submitted successfully");
 
-        // Clear form and image previews
+   
         setFormData({
           carModel: "",
           price: "",
@@ -174,7 +174,7 @@ export default function Page() {
         setImagePreviews([]);
         setErrors({});
       } catch (error) {
-        setApiError(error.message);  // Display API error message
+        setApiError(error.message);  
       } finally {
         setIsLoading(false);
       }

@@ -1,101 +1,325 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { TextField, Button, CircularProgress } from "@mui/material";
+
+import ShowAlerts from "./alerts/ShowAlerts";
+
+export default function Page() {
+  const router = useRouter();
+  const [formData, setFormData] = useState({
+    carModel: "",
+    price: "",
+    phoneNumber: "",
+    city: "",
+  });
+  const [userId, setUserId] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
+  const [errors, setErrors] = useState({});
+  const [apiError, setApiError] = useState("");  
+  const [isLoading, setIsLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");  
+  const [maxImages, setMaxImages] = useState(10); 
+
+  useEffect(() => {
+    const user = localStorage.getItem("user");
+    if (!user) {
+      router.push("/login");
+    } else {
+      const parsedUser = JSON.parse(user);
+      setUserId(parsedUser.data._id);
+    }
+  }, [router]);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    if (errors[name]) {
+      setErrors((prev) => ({
+        ...prev,
+        [name]: "",
+      }));
+    }
+  };
+
+  const handleMaxImagesChange = (e) => {
+    const value = Math.min(e.target.value, 10); 
+  
+
+    setMaxImages(value);
+    if (selectedFiles.length > value) {
+      const excessFiles = selectedFiles.length - value;
+      setSelectedFiles((prevFiles) => prevFiles.slice(0, value));
+      setImagePreviews((prevPreviews) => prevPreviews.slice(0, value));
+      alert(`You can only upload a maximum of ${value} images. ${excessFiles} image(s) were removed.`);
+    }
+  };
+
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files);
+
+    if (selectedFiles.length + files.length > maxImages) {
+      alert(`You can only upload a maximum of ${maxImages} images.`);
+      return;
+    }
+
+    const newPreviews = files.map((file) => URL.createObjectURL(file));
+    setImagePreviews((prevPreviews) => [...prevPreviews, ...newPreviews]);
+    setSelectedFiles((prevFiles) => [...prevFiles, ...files]);
+  };
+
+  const handleDeleteImage = (index) => {
+    setImagePreviews((prevPreviews) =>
+      prevPreviews.filter((_, i) => i !== index)
+    );
+    setSelectedFiles((prevFiles) => prevFiles.filter((_, i) => i !== index));
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+
+    if (formData.carModel.length < 3) {
+      newErrors.carModel = "Car model must be at least 3 characters long";
+    }
+
+    if (!formData.price || isNaN(formData.price)) {
+      newErrors.price = "Price must be a valid number";
+    }
+
+    if (!formData.phoneNumber.match(/^\d{11}$/)) {
+      newErrors.phoneNumber = "Phone number must be exactly 11 digits";
+    }
+
+    if (!formData.city) {
+      newErrors.city = "City is required";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const uploadImages = async () => {
+    const uploadPromises = selectedFiles.map(async (file) => {
+      const fileData = new FormData();
+      fileData.append("file", file);
+      fileData.append(
+        "upload_preset",
+        process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
+      );
+      fileData.append(
+        "cloud_name",
+        process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+      );
+
+      const response = await fetch(
+        "https://api.cloudinary.com/v1_1/dsac1d8rz/image/upload",
+        {
+          method: "POST",
+          body: fileData,
+        }
+      );
+
+      const data = await response.json();
+      return data.secure_url;
+    });
+
+    return await Promise.all(uploadPromises);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (validateForm()) {
+      setIsLoading(true);
+      setApiError("");  // Reset API error message on each submit
+      setSuccessMessage("");  // Reset success message
+
+      try {
+        const imageUrls = await uploadImages();
+
+        const formDataToSend = {
+          ...formData,
+          images: imageUrls,
+          userId: userId,
+        };
+
+        const response = await fetch(`${process.env.NEXT_PUBLIC_DATABASE_CONNECT}/api/vehicles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formDataToSend),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Failed to submit the form");
+        }
+
+        // Success message
+        setSuccessMessage("Vehicle information submitted successfully");
+
+        // Clear form and image previews
+        setFormData({
+          carModel: "",
+          price: "",
+          phoneNumber: "",
+          city: "",
+        });
+        setSelectedFiles([]);
+        setImagePreviews([]);
+        setErrors({});
+      } catch (error) {
+        setApiError(error.message);  // Display API error message
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    router.push("/login");
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <CircularProgress />
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <div className="container mx-auto p-8">
+      <div className="mb-6 flex justify-between items-center">
+        <h1 className="text-3xl font-semibold">Add Vehicle Information</h1>
+        <Button
+          variant="outlined"
+          color="secondary"
+          onClick={handleLogout}
+        >
+          Logout
+        </Button>
+      </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      {successMessage && <ShowAlerts type="success" message={successMessage} />}
+      {apiError && <ShowAlerts type="error" message={apiError} />}
+
+      <form onSubmit={handleSubmit} className="max-w-2xl mx-auto space-y-6">
+        <div>
+          <TextField
+            label="Car Model"
+            variant="outlined"
+            fullWidth
+            name="carModel"
+            value={formData.carModel}
+            onChange={handleInputChange}
+            error={!!errors.carModel}
+            helperText={errors.carModel}
+          />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+
+        <div>
+          <TextField
+            label="Price"
+            variant="outlined"
+            fullWidth
+            name="price"
+            value={formData.price}
+            onChange={handleInputChange}
+            error={!!errors.price}
+            helperText={errors.price}
+            type="number"
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
+        </div>
+
+        <div>
+          <TextField
+            label="Phone Number"
+            variant="outlined"
+            fullWidth
+            name="phoneNumber"
+            value={formData.phoneNumber}
+            onChange={handleInputChange}
+            error={!!errors.phoneNumber}
+            helperText={errors.phoneNumber}
+            type="tel"
           />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
+        </div>
+
+        <div>
+          <TextField
+            label="City"
+            variant="outlined"
+            fullWidth
+            name="city"
+            value={formData.city}
+            onChange={handleInputChange}
+            error={!!errors.city}
+            helperText={errors.city}
           />
-          Go to nextjs.org →
-        </a>
-      </footer>
+        </div>
+
+        <div>
+          <TextField
+            label="Max Number of Images"
+            variant="outlined"
+            fullWidth
+            type="number"
+            value={maxImages}
+            onChange={handleMaxImagesChange}
+            inputProps={{ min: 1, max: 10 }}
+          />
+        </div>
+
+        <div>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFileSelect}
+            className="mt-2 block w-full text-sm text-gray-700 border-gray-300 shadow-sm rounded-md"
+          />
+        </div>
+
+        {imagePreviews.length > 0 && (
+          <div className="grid grid-cols-3 gap-4 mt-4">
+            {imagePreviews.map((preview, index) => (
+              <div key={index} className="relative h-40">
+                <img
+                  src={preview}
+                  alt={`Selected image ${index + 1}`}
+                  className="object-cover rounded-lg w-full h-full"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleDeleteImage(index)}
+                  className="absolute top-0 right-0 bg-red-500 text-white rounded-full p-2"
+                  style={{ paddingLeft: "13px", paddingRight: "13px" }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Button
+          type="submit"
+          variant="contained"
+          color="primary"
+          fullWidth
+          sx={{ py: 2 }}
+          disabled={imagePreviews.length===0}
+        >
+          Submit
+        </Button>
+      </form>
     </div>
   );
 }
